@@ -1,0 +1,709 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: DiaLight <light_01@rambler.ru>
+Date: Fri, 5 Jan 2024 06:35:04 +0300
+Subject: [PATCH] added CustomModelData support in crafting
+
+
+diff --git a/src/main/java/net/minecraft/recipebook/ServerPlaceRecipe.java b/src/main/java/net/minecraft/recipebook/ServerPlaceRecipe.java
+index a65d07cb3d2dae85225921498d1721dc3c6a6bf3..fee7a4e51de37dac6d844fc4f5cff5aa4d5a6e0c 100644
+--- a/src/main/java/net/minecraft/recipebook/ServerPlaceRecipe.java
++++ b/src/main/java/net/minecraft/recipebook/ServerPlaceRecipe.java
+@@ -7,6 +7,8 @@ import it.unimi.dsi.fastutil.ints.IntList;
+ import java.util.Iterator;
+ import java.util.List;
+ import javax.annotation.Nullable;
++
++import net.minecraft.nbt.CompoundTag;
+ import net.minecraft.network.protocol.game.ClientboundPlaceGhostRecipePacket;
+ import net.minecraft.server.level.ServerPlayer;
+ import net.minecraft.world.Container;
+@@ -102,6 +104,13 @@ public class ServerPlaceRecipe<C extends Container> implements PlaceRecipe<Integ
+         final int itemId = inputs.next();
+         ItemStack itemStack = null;
+         boolean isExact = false;
++        if((itemId >> 24) != 0) {  // CustomModelData
++            itemStack = StackedContents.fromStackingIndex(itemId & ((1 << 24) - 1));
++            CompoundTag nbt = new CompoundTag();
++            nbt.putInt("CustomModelData", itemId >> 24);
++            itemStack.setTag(nbt);
++        }
++        if (itemStack == null)
+         if (this.stackedContents.extrasMap != null && itemId >= net.minecraft.core.registries.BuiltInRegistries.ITEM.size()) {
+             itemStack = StackedContents.fromStackingIndexExtras(itemId, this.stackedContents.extrasMap).copy();
+             isExact = true;
+diff --git a/src/main/java/net/minecraft/world/entity/player/Inventory.java b/src/main/java/net/minecraft/world/entity/player/Inventory.java
+index 96d664c28738d6090f7067761c2978dd1aa0fd0e..381046118bd48f0de0fef3bc9f1a52eb5d7d4679 100644
+--- a/src/main/java/net/minecraft/world/entity/player/Inventory.java
++++ b/src/main/java/net/minecraft/world/entity/player/Inventory.java
+@@ -3,6 +3,7 @@ package net.minecraft.world.entity.player;
+ import com.google.common.collect.ImmutableList;
+ import java.util.Iterator;
+ import java.util.List;
++import java.util.Objects;
+ import java.util.function.Predicate;
+ import net.minecraft.CrashReport;
+ import net.minecraft.CrashReportCategory;
+@@ -205,6 +206,15 @@ public class Inventory implements Container, Nameable {
+         for (int i = 0; i < this.items.size(); ++i) {
+             ItemStack itemstack1 = (ItemStack) this.items.get(i);
+ 
++            if (!itemstack1.isEmpty()
++                    && !itemstack1.isDamaged()
++                    && itemstack1.hasTag() && stack.hasTag()) {
++                CompoundTag stackTag = Objects.requireNonNull(stack.getTag());
++                CompoundTag itemTag = Objects.requireNonNull(itemstack1.getTag());
++                if(stackTag.getInt("CustomModelData") == itemTag.getInt("CustomModelData")) {
++                    return i;
++                }
++            }
+             if (!((ItemStack) this.items.get(i)).isEmpty() && ItemStack.isSameItemSameTags(stack, (ItemStack) this.items.get(i)) && !((ItemStack) this.items.get(i)).isDamaged() && !itemstack1.isEnchanted() && !itemstack1.hasCustomHoverName()) {
+                 return i;
+             }
+diff --git a/src/main/java/net/minecraft/world/entity/player/RecipePickerDev.java b/src/main/java/net/minecraft/world/entity/player/RecipePickerDev.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..17858ea8637afc5c0358db897b30471a159b45ab
+--- /dev/null
++++ b/src/main/java/net/minecraft/world/entity/player/RecipePickerDev.java
+@@ -0,0 +1,440 @@
++package net.minecraft.world.entity.player;
++
++import com.google.common.collect.Lists;
++import it.unimi.dsi.fastutil.ints.*;
++import net.minecraft.nbt.CompoundTag;
++import net.minecraft.world.item.ItemStack;
++import net.minecraft.world.item.crafting.Ingredient;
++import net.minecraft.world.item.crafting.Recipe;
++
++import javax.annotation.Nullable;
++import java.util.Arrays;
++import java.util.BitSet;
++import java.util.List;
++import java.util.Objects;
++import java.util.stream.Collectors;
++
++class RecipePickerDev {
++    private final StackedContents parent;
++    private final Recipe<?> recipe;
++    private final List<Ingredient> ingredients = Lists.newArrayList();
++    private final int ingredientCount;
++    private final int[] itemIds;
++    private final int itemCount;
++    private final BitSet data;
++    private final IntList anyPathList = new IntArrayList();
++
++    public RecipePickerDev(StackedContents parent, Recipe<?> recipe) {
++        this.parent = parent;
++        this.recipe = recipe;
++
++        this.ingredients.addAll(recipe.getIngredients());
++        this.ingredients.removeIf(Ingredient::isEmpty);
++        this.ingredientCount = this.ingredients.size();
++        System.out.println("ings: " + fmtIngredients());
++
++        this.itemIds = this.getUniqueAvailableIngredientItems();
++        this.itemCount = this.itemIds.length;
++        System.out.println("items: " + fmtItems());
++        System.out.println("items_is: " + String.join(", ", parent.contentsIs));
++
++        this.data = new BitSet(
++                this.ingredientCount + this.itemCount
++                        + this.ingredientCount
++                        + this.ingredientCount * this.itemCount
++        );
++        // ingredientCount      itemCount      | ingredientCount | [ingredientCount][itemCount]
++        // visited(ingridients) visited(items) | satisfied       | connection
++
++        // VisitedIndex(boolean reversed, int itemId) = (reversed ? 0 : this.ingredientCount) + itemId;
++
++        // SatisfiedIndex = this.ingredientCount + this.itemCount + itemId;
++
++        // Index(boolean reversed, int itemIndex, int ingredientIndex) =
++        //   offset = this.ingredientCount + this.itemCount + this.ingredientCount
++        //   return offset + 2 * (itemIndex * this.ingredientCount + ingredientIndex);
++        // we have no shape info
++
++        //    ingredient
++        // i ............
++        // t ............
++        // e ............
++        // m ............
++        for (int ingIdx = 0; ingIdx < this.ingredients.size(); ++ingIdx) {
++            IntList ingIds = this.getStackingIds(this.ingredients.get(ingIdx)); // Paper
++
++            for (int itemIdx = 0; itemIdx < this.itemCount; ++itemIdx) {
++                if (ingIds.contains(this.itemIds[itemIdx])) {
++                    // set connection
++                    this.data.set(this.getIndex(true, itemIdx, ingIdx));
++                }
++            }
++        }
++        // all connections are set
++    }
++
++    private ItemStack findItem(int itemId) {
++        for (Ingredient ingredient : this.ingredients) {
++            for (ItemStack is : ingredient.getItems()) {
++                if(itemId == StackedContents.getStackingIndex(is)) {
++                    return is;
++                }
++            }
++        }
++        throw new NullPointerException();
++    }
++    private String fmtIngredients() {
++        StringBuilder ings = new StringBuilder();
++        int i = 0;
++        for (Ingredient ingredient : this.ingredients) {
++            String ing = Arrays.stream(ingredient.getItems()).map(RecipePickerDev::formatIs).collect(Collectors.joining(", "));
++            if(i != 0) ings.append(", ");
++            ings.append(i).append(":[").append(ing).append("]");
++            i++;
++        }
++        return ings.toString();
++    }
++    private String fmtItems() {
++        StringBuilder sb = new StringBuilder();
++        int i = 0;
++        for (int itemId : this.itemIds) {
++            ItemStack is = findItem(itemId);
++            String item = formatIs(is, itemId);
++            if(i != 0) sb.append(", ");
++            sb.append(i).append(":[").append(item).append("]");
++            i++;
++        }
++        return sb.toString();
++    }
++
++    public static String formatIs(ItemStack is) {
++        if(!is.hasTag()) return is.toString();
++        CompoundTag tag = Objects.requireNonNull(is.getTag());
++        int customModelData = tag.getInt("CustomModelData");
++        return is + "{" + customModelData + "}";
++    }
++
++    public static String formatIs(ItemStack is, int itemId) {
++        String s = is + "(" + itemId + ")";
++        if(!is.hasTag()) return s;
++        CompoundTag tag = Objects.requireNonNull(is.getTag());
++        int customModelData = tag.getInt("CustomModelData");
++        return s + "{" + customModelData + "}";
++    }
++
++    public boolean tryPick(int multiplier, @Nullable IntList output) {
++        if (multiplier <= 0) {
++            return true;
++        }
++        int ingCnt;
++        for (ingCnt = 0; this.hasItemForIngredient(multiplier); ++ingCnt) {
++            int firstItemIdx_ = this.anyPathList.getInt(0);
++            this.parent.take(this.itemIds[firstItemIdx_], multiplier);
++            int lastAnyIdx = this.anyPathList.size() - 1;
++            this.setIngSatisfied(this.anyPathList.getInt(lastAnyIdx));
++
++            for (int anyIdx = 0; anyIdx < lastAnyIdx; ++anyIdx) {
++                this.toggleSelectForOutput(
++                        (anyIdx & 1) == 0,
++                        this.anyPathList.get(anyIdx),
++                        this.anyPathList.get(anyIdx + 1)
++                );
++            }
++
++            this.anyPathList.clear();
++            this.data.clear(0, this.ingredientCount + this.itemCount);  // clear visited
++        }
++
++        boolean allIngVisited = ingCnt == this.ingredientCount;
++        boolean allVisitedAndOutput = allIngVisited && output != null;
++        if (allVisitedAndOutput) {
++            output.clear();
++        }
++        System.out.println("tryPick"
++                + "  multiplier: " + multiplier
++                + "  allIngVisited: " + allIngVisited
++                + "  allVisitedAndOutput: " + allVisitedAndOutput);
++        System.out.println("  visited: " + fmtVisited());
++        System.out.println("  satisfied: " + fmtIngSatisfied());
++        System.out.println("  " + fmtConnection());
++        System.out.println("  " + fmtSelectForOutput());
++
++        this.data.clear(0, this.ingredientCount + this.itemCount + this.ingredientCount);  // clear visited and satisfied
++        int ingIdx = 0;
++
++        for (Ingredient ingredient : this.recipe.getIngredients()) {
++            if (allVisitedAndOutput && ingredient.isEmpty()) {
++                output.add(0);
++                continue;
++            }
++
++            for (int itemIdx = 0; itemIdx < this.itemCount; ++itemIdx) {
++                if (this.isSelectedForOutput(false, ingIdx, itemIdx)) {
++                    this.toggleSelectForOutput(true, itemIdx, ingIdx);
++                    this.parent.put(this.itemIds[itemIdx], multiplier);
++                    if (allVisitedAndOutput) {
++                        output.add(this.itemIds[itemIdx]);
++                    }
++                }
++            }
++
++            ++ingIdx;
++        }
++        if(allVisitedAndOutput) {
++            System.out.println("  output: " + fmtSelected(output));
++        }
++
++        return allIngVisited;
++    }
++
++    private String fmtSelected(IntList output) {
++        StringBuilder sb = new StringBuilder();
++        int i = 0;
++        for (int itemId : output) {
++            ItemStack is = findItem(itemId);
++            String item = formatIs(is, itemId);
++            if(i != 0) sb.append(", ");
++            sb.append(i).append(":[").append(item).append("]");
++            i++;
++        }
++        return sb.toString();
++    }
++
++    private int[] getUniqueAvailableIngredientItems() {
++        IntCollection intCollection = new IntAVLTreeSet();
++
++        for (Ingredient ingredient : this.ingredients) {
++            intCollection.addAll(this.getStackingIds(ingredient)); // Paper
++        }
++
++        IntIterator intIterator = intCollection.iterator();
++
++        while (intIterator.hasNext()) {
++            if (!this.parent.has(intIterator.nextInt())) {
++                intIterator.remove();
++            }
++        }
++
++        return intCollection.toIntArray();
++    }
++
++    private boolean hasItemForIngredient(int multiplier) {
++        int itemCount = this.itemCount;
++
++        for (int itemIdx = 0; itemIdx < itemCount; ++itemIdx) {
++            if (this.parent.getContentsCount(this.itemIds[itemIdx]) >= multiplier) {
++                this.visitAny(false, itemIdx);
++
++                while (!this.anyPathList.isEmpty()) {
++                    // even = isItem
++                    // odd = isIngredient
++                    int anyPathSize = this.anyPathList.size();
++                    boolean nextIsIngredient = (anyPathSize & 1) == 1;
++                    int lastPathAnyIdx = this.anyPathList.getInt(anyPathSize - 1);
++                    // break if ingredient satisfied
++                    if (!nextIsIngredient && !this.isIngSatisfied(lastPathAnyIdx)) {
++                        break;
++                    }
++
++                    int toCheckCount = nextIsIngredient ? this.ingredientCount : itemCount;
++
++                    for (int anyIdx = 0; anyIdx < toCheckCount; ++anyIdx) {
++                        if (
++                                !this.hasVisited(nextIsIngredient, anyIdx)
++                                        && this.hasConnection(nextIsIngredient, lastPathAnyIdx, anyIdx)
++                                        && this.isSelectedForOutput(nextIsIngredient, lastPathAnyIdx, anyIdx)
++                        ) {
++                            this.visitAny(nextIsIngredient, anyIdx);
++                            break;
++                        }
++                    }
++
++                    // remove last if no pair found
++                    int newAnyPathSize = this.anyPathList.size();
++                    if (newAnyPathSize == anyPathSize) {
++                        this.anyPathList.removeInt(newAnyPathSize - 1);
++                    }
++                }
++
++                if (!this.anyPathList.isEmpty()) {
++                    return true;
++                }
++            }
++        }
++
++        return false;
++    }
++
++    private boolean isIngSatisfied(int ingredientId) {
++        return this.data.get(this.getSatisfiedIndex(ingredientId));
++    }
++
++    private void setIngSatisfied(int ingredientId) {
++        this.data.set(this.getSatisfiedIndex(ingredientId));
++    }
++    private String fmtIngSatisfied() {
++        StringBuilder sb = new StringBuilder();
++        sb.append("ing[");
++        int i = 0;
++        for (int ingIdx = 0; ingIdx < this.ingredientCount; ingIdx++) {
++            if(isIngSatisfied(ingIdx)) {
++                if(i != 0) sb.append(",");
++                sb.append(ingIdx);
++                i++;
++            }
++        }
++        sb.append("]");
++        return sb.toString();
++    }
++
++    private int getSatisfiedIndex(int ingredientId) {
++        return this.ingredientCount + this.itemCount + ingredientId;
++    }
++
++    private boolean hasConnection(boolean isIngredient, int itemIndex, int ingredientIndex) {
++        return this.data.get(this.getIndex(isIngredient, itemIndex, ingredientIndex));
++    }
++
++    private boolean isSelectedForOutput(boolean isIngredient, int itemIndex, int ingredientIndex) {  // selected for output
++        int nextIngredientIdx = 1 + this.getIndex(isIngredient, itemIndex, ingredientIndex);
++        return isIngredient != this.data.get(nextIngredientIdx);
++    }
++
++    private void toggleSelectForOutput(boolean isIngredient, int itemIndex, int ingredientIndex) {
++        this.data.flip(1 + this.getIndex(isIngredient, itemIndex, ingredientIndex));
++    }
++    private String fmtConnection() {
++        StringBuilder sb = new StringBuilder();
++        sb.append("con[");
++        int i = 0;
++        for (int ingIdx = 0; ingIdx < this.ingredientCount; ingIdx++) {
++            for (int itemIdx = 0; itemIdx < this.itemCount; itemIdx++) {
++                if(hasConnection(true, itemIdx, ingIdx)) {
++                    if(i != 0) sb.append(",");
++                    sb.append(itemIdx).append("-").append(ingIdx);
++                    i++;
++                }
++            }
++        }
++        sb.append("]");
++        return sb.toString();
++    }
++    private String fmtSelectForOutput() {
++        StringBuilder sb = new StringBuilder();
++        sb.append("sel[");
++        int i = 0;
++        for (int ingIdx = 0; ingIdx < this.ingredientCount; ingIdx++) {
++            for (int itemIdx = 0; itemIdx < this.itemCount; itemIdx++) {
++                if(isSelectedForOutput(true, itemIdx, ingIdx)) {
++                    if(i != 0) sb.append(",");
++                    sb.append(itemIdx).append("-").append(ingIdx);
++                    i++;
++                }
++            }
++        }
++        sb.append("]");
++        return sb.toString();
++    }
++
++    private int getIndex(boolean isIngredient, int anyR, int anyIdx) {
++        //    ingredient
++        // i co co co co co
++        // t co co co co co
++        // e co co co co co
++        // m co co co co co
++        int i = isIngredient
++                ? anyR * this.ingredientCount + anyIdx  // natural
++                : anyIdx * this.ingredientCount + anyR;
++        int offset = this.ingredientCount + this.itemCount + this.ingredientCount;
++        return offset + 2 * i;
++    }
++
++    private void visitAny(boolean isIngredient, int anyIdx) {
++        this.data.set(this.getVisitedIndex(isIngredient, anyIdx));
++        this.anyPathList.add(anyIdx);
++    }
++
++    private boolean hasVisited(boolean isIngredient, int anyIdx) {
++        return this.data.get(this.getVisitedIndex(isIngredient, anyIdx));
++    }
++
++    private String fmtVisited() {
++        StringBuilder sb = new StringBuilder();
++        sb.append("ing[");
++        int i = 0;
++        for (int ingIdx = 0; ingIdx < this.ingredientCount; ingIdx++) {
++            if(hasVisited(true, ingIdx)) {
++                if(i != 0) sb.append(",");
++                sb.append(ingIdx);
++                i++;
++            }
++        }
++        sb.append("] item[");
++        i = 0;
++        for (int itemIdx = 0; itemIdx < this.itemCount; itemIdx++) {
++            if(hasVisited(false, itemIdx)) {
++                if(i != 0) sb.append(",");
++                sb.append(itemIdx);
++                i++;
++            }
++        }
++        sb.append("]");
++        return sb.toString();
++    }
++
++    private int getVisitedIndex(boolean isIngredient, int idx) {
++        return (isIngredient ? 0 : this.ingredientCount) + idx;
++    }
++
++    public int tryPickAll(int minimum, @Nullable IntList output) {
++        int i = 0;
++        int minIngCount = Math.min(minimum, this.getMinIngredientCount()) + 1;
++
++        while (true) {
++            int multiplier = (i + minIngCount) / 2;
++            if (this.tryPick(multiplier, (IntList) null)) {
++                if (minIngCount - i <= 1) {
++                    if (multiplier > 0) {
++                        this.tryPick(multiplier, output);
++                    }
++
++                    return multiplier;
++                }
++
++                i = multiplier;
++            } else {
++                minIngCount = multiplier;
++            }
++        }
++    }
++
++    private int getMinIngredientCount() {
++        int min = Integer.MAX_VALUE;
++
++        for (Ingredient ingredient : this.ingredients) {
++            int ingCount = 0;
++
++            for (int ingIdx : this.getStackingIds(ingredient)) { // Paper
++                ingCount = Math.max(ingCount, this.parent.getContentsCount(ingIdx));
++            }
++
++            if (min > 0) {
++                min = Math.min(min, ingCount);
++            }
++        }
++
++        return min;
++    }
++
++    // Paper start - improve exact recipe choices
++    private IntList getStackingIds(final Ingredient ingredient) {
++        if (this.parent.extrasMap != null) {
++            final IntList ids = this.parent.extrasMap.extraStackingIds.get(ingredient);
++            if (ids != null) {
++                return ids;
++            }
++        }
++        return ingredient.getStackingIds();
++    }
++    // Paper end - improve exact recipe choices
++}
+diff --git a/src/main/java/net/minecraft/world/entity/player/StackedContents.java b/src/main/java/net/minecraft/world/entity/player/StackedContents.java
+index 26b236a764177ac16d53f5cbaf83d3e21d015ebc..3eeec7894c849cbd80110731fe1a4cbf69aedd4c 100644
+--- a/src/main/java/net/minecraft/world/entity/player/StackedContents.java
++++ b/src/main/java/net/minecraft/world/entity/player/StackedContents.java
+@@ -8,10 +8,14 @@ import it.unimi.dsi.fastutil.ints.IntArrayList;
+ import it.unimi.dsi.fastutil.ints.IntCollection;
+ import it.unimi.dsi.fastutil.ints.IntIterator;
+ import it.unimi.dsi.fastutil.ints.IntList;
++
++import java.util.ArrayList;
+ import java.util.BitSet;
+ import java.util.List;
++import java.util.Objects;
+ import javax.annotation.Nullable;
+ import net.minecraft.core.registries.BuiltInRegistries;
++import net.minecraft.nbt.CompoundTag;
+ import net.minecraft.world.item.Item;
+ import net.minecraft.world.item.ItemStack;
+ import net.minecraft.world.item.crafting.Ingredient;
+@@ -21,6 +25,7 @@ import net.minecraft.world.item.crafting.RecipeHolder;
+ public class StackedContents {
+     private static final int EMPTY = 0;
+     public final Int2IntMap contents = new Int2IntOpenHashMap();
++    public final List<String> contentsIs = new ArrayList<>();
+     @Nullable public io.papermc.paper.inventory.recipe.StackedContentsExtraMap extrasMap = null; // Paper
+ 
+     public void accountSimpleStack(ItemStack stack) {
+@@ -28,6 +33,9 @@ public class StackedContents {
+         if (!stack.isDamaged() && !stack.isEnchanted() && !stack.hasCustomHoverName()) {
+             this.accountStack(stack);
+         }
++        else if(!stack.isDamaged() && stack.hasTag() && Objects.requireNonNull(stack.getTag()).contains("CustomModelData")) {
++            this.accountStack(stack);
++        }
+ 
+     }
+ 
+@@ -39,14 +47,22 @@ public class StackedContents {
+         if (!stack.isEmpty()) {
+             int i = getStackingIndex(stack);
+             int j = Math.min(maxCount, stack.getCount());
+-            if (this.extrasMap != null && stack.hasTag() && this.extrasMap.accountStack(stack, j)) return; // Paper - if an exact ingredient, don't include it
++            boolean byExtras = this.extrasMap != null && stack.hasTag() && this.extrasMap.accountStack(stack, j);
++            contentsIs.add(RecipePickerDev.formatIs(stack, i) + "_be:" + byExtras);
++            if (byExtras) return; // Paper - if an exact ingredient, don't include it
+             this.put(i, j);
+         }
+ 
+     }
+ 
+     public static int getStackingIndex(ItemStack stack) {
+-        return BuiltInRegistries.ITEM.getId(stack.getItem());
++        int id = BuiltInRegistries.ITEM.getId(stack.getItem());
++        if (stack.hasTag()) {
++            CompoundTag tag = Objects.requireNonNull(stack.getTag());
++            int customModelData = tag.getInt("CustomModelData");
++            id |= customModelData << 24;  // 256 max possible CustomModelData per item
++        }
++        return id;
+     }
+ 
+     boolean has(int itemId) {
+@@ -73,6 +89,7 @@ public class StackedContents {
+ 
+     public boolean canCraft(Recipe<?> recipe, @Nullable IntList output, int multiplier) {
+         return (new StackedContents.RecipePicker(recipe)).tryPick(multiplier, output);
++//        return (new RecipePickerDev(this, recipe)).tryPick(multiplier, output);
+     }
+ 
+     public int getBiggestCraftableStack(RecipeHolder<?> recipe, @Nullable IntList output) {
+@@ -81,6 +98,7 @@ public class StackedContents {
+ 
+     public int getBiggestCraftableStack(RecipeHolder<?> recipe, int limit, @Nullable IntList output) {
+         return (new StackedContents.RecipePicker(recipe.value())).tryPickAll(limit, output);
++//        return (new RecipePickerDev(this, recipe.value())).tryPickAll(limit, output);
+     }
+ 
+     public static ItemStack fromStackingIndex(int itemId) {
+@@ -92,7 +110,8 @@ public class StackedContents {
+         this.extrasMap = new io.papermc.paper.inventory.recipe.StackedContentsExtraMap(this, recipe);
+     }
+ 
+-    public static int maxStackSizeFromStackingIndex(final int itemId, @Nullable final StackedContents contents) {
++    public static int maxStackSizeFromStackingIndex(int itemId, @Nullable final StackedContents contents) {
++        if((itemId >> 24) != 0) itemId &= (1 << 24) - 1;  // mask out CustomModelData
+         if (contents != null && contents.extrasMap != null && itemId >= BuiltInRegistries.ITEM.size()) {
+             return fromStackingIndexExtras(itemId, contents.extrasMap).getMaxStackSize();
+         }
+@@ -107,6 +126,7 @@ public class StackedContents {
+     public void clear() {
+         this.contents.clear();
+     }
++    public int getContentsCount(int itemId) { return this.contents.get(itemId); }
+ 
+     class RecipePicker {
+         private final Recipe<?> recipe;
+diff --git a/src/main/java/net/minecraft/world/item/ItemStack.java b/src/main/java/net/minecraft/world/item/ItemStack.java
+index de277d61b718fe07a87d75a2547bb1c7f8553aa1..b0cc92797408c38dcd47fdc7ef0ea128d82cd091 100644
+--- a/src/main/java/net/minecraft/world/item/ItemStack.java
++++ b/src/main/java/net/minecraft/world/item/ItemStack.java
+@@ -138,6 +138,19 @@ public final class ItemStack {
+     public static final Codec<ItemStack> ITEM_WITH_COUNT_CODEC = RecordCodecBuilder.create((instance) -> {
+         return instance.group(ItemStack.ITEM_NON_AIR_CODEC.fieldOf("item").forGetter(ItemStack::getItem), ExtraCodecs.strictOptionalField(ExtraCodecs.POSITIVE_INT, "count", 1).forGetter(ItemStack::getCount)).apply(instance, ItemStack::new);
+     });
++    public static final Codec<ItemStack> ITEM_WITH_COUNT_NBT_CODEC = RecordCodecBuilder.create((instance) -> {
++        return instance.group(
++                ItemStack.ITEM_NON_AIR_CODEC.fieldOf("item").forGetter(ItemStack::getItem),
++                ExtraCodecs.strictOptionalField(ExtraCodecs.POSITIVE_INT, "count", 1).forGetter(ItemStack::getCount),
++                ExtraCodecs.strictOptionalField(TagParser.AS_CODEC, "nbt").forGetter((itemstack) -> {
++                    return Optional.ofNullable(itemstack.getTag());
++                })
++        ).apply(instance, (item, count, optional) -> {
++            ItemStack itemStack = new ItemStack(item, count);
++            optional.ifPresent(itemStack::setTag);
++            return itemStack;
++        });
++    });
+     public static final Codec<ItemStack> SINGLE_ITEM_CODEC = ItemStack.ITEM_NON_AIR_CODEC.xmap(ItemStack::new, ItemStack::getItem);
+     public static final MapCodec<ItemStack> RESULT_CODEC = RecordCodecBuilder.mapCodec((instance) -> {
+         return instance.group(BuiltInRegistries.ITEM.byNameCodec().fieldOf("result").forGetter(ItemStack::getItem), Codec.INT.fieldOf("count").forGetter(ItemStack::getCount)).apply(instance, ItemStack::new);
+diff --git a/src/main/java/net/minecraft/world/item/crafting/Ingredient.java b/src/main/java/net/minecraft/world/item/crafting/Ingredient.java
+index 7c29750e534eae4266bf7a63c50e3827401d6569..660845e1ce6ec1066f71fb2b0b594ebc2d98d402 100644
+--- a/src/main/java/net/minecraft/world/item/crafting/Ingredient.java
++++ b/src/main/java/net/minecraft/world/item/crafting/Ingredient.java
+@@ -8,17 +8,17 @@ import com.mojang.serialization.codecs.RecordCodecBuilder;
+ import it.unimi.dsi.fastutil.ints.IntArrayList;
+ import it.unimi.dsi.fastutil.ints.IntComparators;
+ import it.unimi.dsi.fastutil.ints.IntList;
+-import java.util.Arrays;
+-import java.util.Collection;
+-import java.util.Collections;
+-import java.util.Iterator;
+-import java.util.List;
++
++import java.util.*;
+ import java.util.function.Predicate;
++import java.util.stream.Collectors;
+ import java.util.stream.Stream;
+ import javax.annotation.Nullable;
+ import net.minecraft.core.Holder;
+ import net.minecraft.core.registries.BuiltInRegistries;
+ import net.minecraft.core.registries.Registries;
++import net.minecraft.nbt.CompoundTag;
++import net.minecraft.nbt.TagParser;
+ import net.minecraft.network.FriendlyByteBuf;
+ import net.minecraft.tags.TagKey;
+ import net.minecraft.util.ExtraCodecs;
+@@ -83,7 +83,16 @@ public final class Ingredient implements Predicate<ItemStack> {
+                 }
+                 // CraftBukkit end
+                 if (itemstack1.is(itemstack.getItem())) {
+-                    return true;
++                    var hasCustomModelData = false;
++                    if(itemstack.hasTag() && itemstack1.hasTag()) {
++                        CompoundTag testTag = Objects.requireNonNull(itemstack.getTag());
++                        CompoundTag ingredientTag = Objects.requireNonNull(itemstack1.getTag());
++                        var testCustomModelData = testTag.getInt("CustomModelData");
++                        var ingredientCustomModelData = ingredientTag.getInt("CustomModelData");
++                        if(testCustomModelData != 0 || ingredientCustomModelData != 0) hasCustomModelData = true;
++                        if(hasCustomModelData && (testCustomModelData == ingredientCustomModelData)) return true;
++                    }
++                    if(!hasCustomModelData) return true;
+                 }
+             }
+ 
+@@ -242,7 +251,13 @@ public final class Ingredient implements Predicate<ItemStack> {
+         static final Codec<Ingredient.ItemValue> CODEC = RecordCodecBuilder.create((instance) -> {
+             return instance.group(ItemStack.SINGLE_ITEM_CODEC.fieldOf("item").forGetter((recipeitemstack_stackprovider) -> {
+                 return recipeitemstack_stackprovider.item;
+-            })).apply(instance, Ingredient.ItemValue::new);
++            }),
++            ExtraCodecs.strictOptionalField(TagParser.AS_CODEC, "nbt").forGetter((recipeitemstack_stackprovider) -> {
++                return Optional.ofNullable(recipeitemstack_stackprovider.item.getTag());
++            })).apply(instance, (item, otag) -> {
++                otag.ifPresent(item::setTag);
++                return new Ingredient.ItemValue(item);
++            });
+         });
+ 
+         public boolean equals(Object object) {
+diff --git a/src/main/java/net/minecraft/world/item/crafting/ShapedRecipe.java b/src/main/java/net/minecraft/world/item/crafting/ShapedRecipe.java
+index d772cf80fa3831e1c79d601ea09a073da089e2c5..1679ca30b165ca1657815aaa9380fd92814b11f7 100644
+--- a/src/main/java/net/minecraft/world/item/crafting/ShapedRecipe.java
++++ b/src/main/java/net/minecraft/world/item/crafting/ShapedRecipe.java
+@@ -15,6 +15,8 @@ import org.bukkit.craftbukkit.inventory.CraftItemStack;
+ import org.bukkit.craftbukkit.inventory.CraftRecipe;
+ import org.bukkit.craftbukkit.inventory.CraftShapedRecipe;
+ import org.bukkit.inventory.RecipeChoice;
++
++import java.util.Objects;
+ // CraftBukkit end
+ 
+ public class ShapedRecipe extends io.papermc.paper.inventory.recipe.RecipeBookExactChoiceRecipe<CraftingContainer> implements CraftingRecipe { // Paper - improve exact recipe choices
+@@ -171,7 +173,7 @@ public class ShapedRecipe extends io.papermc.paper.inventory.recipe.RecipeBookEx
+                 return shapedrecipes.category;
+             }), ShapedRecipePattern.MAP_CODEC.forGetter((shapedrecipes) -> {
+                 return shapedrecipes.pattern;
+-            }), ItemStack.ITEM_WITH_COUNT_CODEC.fieldOf("result").forGetter((shapedrecipes) -> {
++            }), ItemStack.ITEM_WITH_COUNT_NBT_CODEC.fieldOf("result").forGetter((shapedrecipes) -> {
+                 return shapedrecipes.result;
+             }), ExtraCodecs.strictOptionalField(Codec.BOOL, "show_notification", true).forGetter((shapedrecipes) -> {
+                 return shapedrecipes.showNotification;
