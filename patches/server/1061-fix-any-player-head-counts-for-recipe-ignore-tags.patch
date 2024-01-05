@@ -1,0 +1,25 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: DiaLight <light_01@rambler.ru>
+Date: Fri, 5 Jan 2024 17:34:30 +0300
+Subject: [PATCH] fix any player head counts for recipe ignore tags
+
+
+diff --git a/src/main/java/net/minecraft/world/entity/player/Inventory.java b/src/main/java/net/minecraft/world/entity/player/Inventory.java
+index e1f872ae7fbe2620ec74301ff7bf04bb893a9aa2..7058b020788c73dc0614d31192521810fd4fa445 100644
+--- a/src/main/java/net/minecraft/world/entity/player/Inventory.java
++++ b/src/main/java/net/minecraft/world/entity/player/Inventory.java
+@@ -217,6 +217,14 @@ public class Inventory implements Container, Nameable {
+ //                CustomModelDataSupport.LOGGER.info("findSlotMatchingUnusedItem: " + CustomModelDataSupport.formatIs(itemstack1));
+                 return i;
+             }
++            // fix: any player head counts for recipe ignore tags
++            if (!itemstack1.isEmpty()) {
++                if(stack.is(itemstack1.getItem()) && (stack.getItem() == Items.PLAYER_HEAD)) {
++                    if(!itemstack1.isDamaged() && !itemstack1.isEnchanted() && !itemstack1.hasCustomHoverName()) {
++                        return i;
++                    }
++                }
++            }
+             if (!((ItemStack) this.items.get(i)).isEmpty() && ItemStack.isSameItemSameTags(stack, (ItemStack) this.items.get(i)) && !((ItemStack) this.items.get(i)).isDamaged() && !itemstack1.isEnchanted() && !itemstack1.hasCustomHoverName()) {
+                 return i;
+             }
