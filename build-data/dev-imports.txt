@@ -12,16 +12,5 @@
 #     mc_data chat_type/chat.json
 #     mc_data dimension_type/overworld.json
 #
-minecraft net/minecraft/world/item/CreativeModeTabs.java
-minecraft net/minecraft/world/item/CreativeModeTab.java
-minecraft net/minecraft/world/item/SmithingTemplateItem.java
-minecraft net/minecraft/world/item/Tiers.java
-minecraft net/minecraft/world/item/ArmorMaterials.java
-minecraft net/minecraft/world/damagesource/CombatTracker.java
-minecraft net/minecraft/world/item/enchantment/EnchantmentCategory.java
-minecraft net/minecraft/world/item/enchantment/EnchantmentHelper.java
-minecraft net/minecraft/world/item/Item.java
-minecraft net/minecraft/world/item/alchemy/PotionUtils.java
-minecraft net/minecraft/world/effect/MobEffect.java
-minecraft net/minecraft/world/item/Items.java
+
 

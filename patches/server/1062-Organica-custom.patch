@@ -1,6 +1,6 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: DiaLight <light_01@rambler.ru>
-Date: Mon, 8 Jan 2024 02:19:08 +0300
+Date: Thu, 11 Jan 2024 20:05:34 +0300
 Subject: [PATCH] Organica custom
 
 
@@ -285,6 +285,235 @@ index 0000000000000000000000000000000000000000..4643e3ca82d641f2b23a1c4ef5dd88d7
 +
 +        throw new IllegalArgumentException("Unable to find " + name + " in " + type);
 +    }
++}
+diff --git a/src/main/java/eu/pb4/polymer/common/api/PolymerCommonUtils.java b/src/main/java/eu/pb4/polymer/common/api/PolymerCommonUtils.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..20c685b8ba74b5ecca4dd37990bbbf28a837dfc9
+--- /dev/null
++++ b/src/main/java/eu/pb4/polymer/common/api/PolymerCommonUtils.java
+@@ -0,0 +1,223 @@
++package eu.pb4.polymer.common.api;
++
++import com.mojang.authlib.GameProfile;
++import eu.pb4.polymer.common.api.events.SimpleEvent;
++import eu.pb4.polymer.common.impl.*;
++// import eu.pb4.polymer.common.impl.client.ClientUtils;
++// import eu.pb4.polymer.common.impl.compat.FloodGateUtils;
++import net.minecraft.server.level.ServerPlayer;
++import org.jetbrains.annotations.Nullable;
++import xyz.nucleoid.packettweaker.PacketContext;
++
++import java.io.InputStream;
++import java.net.URL;
++import java.net.URLConnection;
++import java.nio.file.FileSystems;
++import java.nio.file.Files;
++import java.nio.file.Path;
++import java.util.UUID;
++
++public final class PolymerCommonUtils {
++    private PolymerCommonUtils(){}
++
++    // public static final SimpleEvent<ResourcePackChangeCallback> ON_RESOURCE_PACK_STATUS_CHANGE = new SimpleEvent<>();
++    private static Path cachedClientPath;
++    private final static String SAFE_CLIENT_SHA1 = "fd19469fed4a4b4c15b2d5133985f0e3e7816a8a";
++    private final static String SAFE_CLIENT_URL = "https://piston-data.mojang.com/v1/objects/" + SAFE_CLIENT_SHA1 + "/client.jar";
++    private static Path cachedClientJarRoot;
++
++    // @Nullable
++    // public static Path getClientJarRoot() {
++    //     if (cachedClientJarRoot != null) {
++    //         return cachedClientJarRoot;
++    //     }
++    //
++    //     if (CommonImpl.IS_CLIENT) {
++    //         var container = FabricLoader.getInstance().getModContainer("minecraft").get();
++    //         for (var x : container.getRootPaths()) {
++    //             if (Files.exists(x.resolve("assets"))) {
++    //                 cachedClientJarRoot = x;
++    //                 return x;
++    //             }
++    //         }
++    //     }
++    //     var source = getClientJar();
++    //
++    //     if (source == null) {
++    //         return null;
++    //     }
++    //
++    //     try {
++    //         var fs = FileSystems.newFileSystem(source);
++    //         for (var x : fs.getRootDirectories()) {
++    //             if (Files.exists(x.resolve("assets"))) {
++    //                 cachedClientJarRoot = x;
++    //                 return x;
++    //             }
++    //         }
++    //         fs.close();
++    //     } catch (Throwable e) {
++    //         e.printStackTrace();
++    //     }
++    //     return null;
++    // }
++    //
++    // @Nullable
++    // public static Path getClientJar() {
++    //     if (cachedClientPath != null) {
++    //         return cachedClientPath;
++    //     }
++    //
++    //     try {
++    //         if (CommonImpl.IS_CLIENT) {
++    //             var clientFile = MinecraftServer.class.getProtectionDomain().getCodeSource().getLocation().toURI();
++    //             var clientJarPath = Path.of(clientFile);
++    //             if (Files.exists(clientJarPath)) {
++    //                 try (var fs = FileSystems.newFileSystem(clientJarPath)) {
++    //                     if (Files.exists(fs.getPath("/"))) {
++    //                         cachedClientPath = clientJarPath;
++    //                         return cachedClientPath;
++    //                     }
++    //                 } catch (Throwable e) {
++    //                     e.printStackTrace();
++    //                 }
++    //             }
++    //         }
++    //
++    //         Path clientJarPath = CommonImpl.getGameDir().resolve("polymer/cached_client_jars/" + SAFE_CLIENT_SHA1 + ".jar");
++    //
++    //         if (!Files.exists(clientJarPath)) {
++    //             Files.createDirectories(clientJarPath.getParent());
++    //             CommonImpl.LOGGER.info("Downloading vanilla client jar...");
++    //             URL url = new URL(SAFE_CLIENT_URL);
++    //             URLConnection connection = url.openConnection();
++    //             InputStream is = connection.getInputStream();
++    //             Files.copy(is, clientJarPath);
++    //         }
++    //         cachedClientPath = clientJarPath;
++    //         return clientJarPath;
++    //     } catch (Exception e) {
++    //         CommonImpl.LOGGER.error("Couldn't retrieve client jar!", e);
++    //         return null;
++    //     }
++    // }
++    //
++    // /**
++    //  * Allows to execute code with selected player being returned for {@link PolymerCommonUtils#getPlayerContext()}
++    //  * calls. Useful for custom packets using writeItemStack and similar methods.
++    //  *
++    //  * @param player
++    //  * @param runnable
++    //  */
++    // public static void executeWithPlayerContext(ServerPlayerEntity player, Runnable runnable) {
++    //     var oldPlayer = CommonImplUtils.getPlayer();
++    //     var oldTarget = PacketContext.get().getPlayer();
++    //     var oldPacket = PacketContext.get().getEncodedPacket();
++    //
++    //     CommonImplUtils.setPlayer(player);
++    //     PacketContext.setContext(((CommonNetworkHandlerExt)player.networkHandler).polymerCommon$getConnection(), null);
++    //
++    //     runnable.run();
++    //
++    //     CommonImplUtils.setPlayer(oldPlayer);
++    //     PacketContext.setContext(oldTarget != null ? ((CommonNetworkHandlerExt)player.networkHandler).polymerCommon$getConnection() : null, oldPacket);
++    // }
++    //
++    //
++    // public static World getFakeWorld() {
++    //     return FakeWorld.INSTANCE;
++    // }
++
++    /**
++     * Returns player if it's known to polymer (otherwise null!)
++     */
++    @Nullable
++    public static ServerPlayer getPlayerContext() {
++        ServerPlayer player = getPlayerContextNoClient();
++        // if (player == null && CommonImpl.IS_CLIENT) {
++        //     player = ClientUtils.getPlayer();
++        // }
++
++        return player;
++    }
++
++    @Nullable
++    public static ServerPlayer getPlayerContextNoClient() {
++        ServerPlayer player = PacketContext.get().getPlayer();
++        //
++        // if (player == null) {
++        //     player = CommonImplUtils.getPlayer();
++        // }
++        //
++        return player;
++    }
++
++    public static boolean isNetworkingThread() {
++        return Thread.currentThread().getName().startsWith("Netty");
++    }
++
++    public static boolean isServerNetworkingThread() {
++        return isNetworkingThread() && Thread.currentThread().getName().contains("Server");
++    }
++
++    // public static boolean isBedrockPlayer(ServerPlayerEntity player) {
++    //     if (CompatStatus.FLOODGATE) {
++    //         return FloodGateUtils.isPlayerBroken(player);
++    //     }
++    //     return false;
++    // }
++    //
++    // public static boolean isBedrockPlayer(GameProfile profile) {
++    //     if (CompatStatus.FLOODGATE) {
++    //         return FloodGateUtils.isPlayerBroken(profile);
++    //     }
++    //     return false;
++    // }
++    //
++    // public static boolean hasResourcePack(@Nullable ServerPlayerEntity player, UUID uuid) {
++    //     return CommonImpl.FORCE_RESOURCEPACK_ENABLED_STATE
++    //         || (player != null && player.networkHandler != null && ((CommonClientConnectionExt) ((CommonNetworkHandlerExt) player.networkHandler)
++    //         .polymerCommon$getConnection()).polymerCommon$hasResourcePack(uuid))
++    //         || (CommonImpl.IS_CLIENT && ClientUtils.isResourcePackLoaded());
++    // }
++    //
++    // public static boolean hasResourcePack(ClientConnection connection, UUID uuid) {
++    //     return CommonImpl.FORCE_RESOURCEPACK_ENABLED_STATE
++    //         || ((CommonClientConnectionExt) connection).polymerCommon$hasResourcePack(uuid)
++    //         || (CommonImpl.IS_CLIENT && ClientUtils.isResourcePackLoaded());
++    // }
++    //
++    // public static boolean isServerBound() {
++    //     if (CommonImpl.IS_CLIENT) {
++    //         return ClientUtils.isSingleplayer();
++    //     }
++    //
++    //     return true;
++    // }
++    //
++    // public static void setHasResourcePack(ServerPlayerEntity player, UUID uuid, boolean status) {
++    //     ((CommonClientConnectionExt) ((CommonNetworkHandlerExt) player.networkHandler).polymerCommon$getConnection()).polymerCommon$setResourcePack(uuid, status);
++    // }
++    //
++    // public static void setHasResourcePack(ClientConnection player, UUID uuid, boolean status) {
++    //     ((CommonClientConnectionExt) player).polymerCommon$setResourcePack(uuid, status);
++    // }
++    //
++    // /**
++    //  * Creates instance of object by using unsafe, bypassing initializers.
++    //  * All of its fields will be set to null or similar.
++    //  *
++    //  * Useful for bad packet implementations™™
++    //  *
++    //  * @param clazz class to instantiate
++    //  * @return New instance
++    //  * @param <T> Anything you want
++    //  */
++    // public static <T> T createUnsafe(Class<T> clazz) {
++    //     return CommonImplUtils.createUnsafe(clazz);
++    // }
++    //
++    // public interface ResourcePackChangeCallback {
++    //     void onResourcePackChange(ServerCommonNetworkHandler handler, UUID uuid, boolean oldStatus, boolean newStatus);
++    // }
 +}
 diff --git a/src/main/java/eu/pb4/polymer/common/api/events/BooleanEvent.java b/src/main/java/eu/pb4/polymer/common/api/events/BooleanEvent.java
 new file mode 100644
@@ -1798,18 +2027,41 @@ index 0000000000000000000000000000000000000000..6a8d110e63c24ba47acb99e4ed47a1de
 +}
 diff --git a/src/main/java/eu/pb4/polymer/core/api/utils/PolymerUtils.java b/src/main/java/eu/pb4/polymer/core/api/utils/PolymerUtils.java
 new file mode 100644
-index 0000000000000000000000000000000000000000..59aa0a87112991073cf47ad5d99fc90db164cfb1
+index 0000000000000000000000000000000000000000..e47f9c08788cbfde11d0647f0b5a5c40290e1e43
 --- /dev/null
 +++ b/src/main/java/eu/pb4/polymer/core/api/utils/PolymerUtils.java
-@@ -0,0 +1,26 @@
+@@ -0,0 +1,73 @@
 +package eu.pb4.polymer.core.api.utils;
 +
++import eu.pb4.polymer.common.api.PolymerCommonUtils;
++import eu.pb4.polymer.core.api.block.PolymerBlockUtils;
 +import eu.pb4.polymer.core.impl.PolymerImplUtils;
++import it.unimi.dsi.fastutil.ints.IntArrayList;
++import it.unimi.dsi.fastutil.ints.IntList;
++import net.minecraft.core.Holder;
++import net.minecraft.core.IdMap;
++import net.minecraft.core.Registry;
++import net.minecraft.core.registries.BuiltInRegistries;
++import net.minecraft.resources.ResourceKey;
++import net.minecraft.resources.ResourceLocation;
 +import net.minecraft.server.level.ServerPlayer;
 +import net.minecraft.world.item.TooltipFlag;
 +import org.jetbrains.annotations.Nullable;
++import java.util.HashMap;
++import java.util.Map;
 +
 +public class PolymerUtils {
++
++    // ...
++
++    /**
++     * Returns player if it's known to polymer (otherwise null!)
++     */
++    @Nullable
++    public static ServerPlayer getPlayerContext() {
++        return PolymerCommonUtils.getPlayerContext();
++    }
++
 +    // ...
 +
 +    /**
@@ -1826,14 +2078,38 @@ index 0000000000000000000000000000000000000000..59aa0a87112991073cf47ad5d99fc90d
 +        return PolymerImplUtils.getTooltipContext(player).withCreative();
 +    }
 +
++    public static Map<ResourceLocation, IntList> skipEntries(Map<ResourceLocation, IntList> tags) {
++        var map = new HashMap<ResourceLocation, IntList>();
++        var player = PolymerUtils.getPlayerContext();
++        for (var entry : tags.entrySet()) {
++            var reg = BuiltInRegistries.REGISTRY.get(entry.getKey());
++
++            if (reg != null) {
++                var list = new IntArrayList(entry.getValue().size());
++
++                for (int i : entry.getValue()) {
++                    if (PolymerSyncedObject.canSyncRawToClient(reg.byId(i), player)) {
++                        list.add(i);
++                    }
++                }
++
++                map.put(entry.getKey(), list);
++            } else {
++                // Dynamic registry, client should understand it
++                map.put(entry.getKey(), entry.getValue());
++            }
++        }
++        return map;
++    }
++
 +    // ...
 +}
 diff --git a/src/main/java/eu/pb4/polymer/core/impl/PolymerImpl.java b/src/main/java/eu/pb4/polymer/core/impl/PolymerImpl.java
 new file mode 100644
-index 0000000000000000000000000000000000000000..6af6c9fa8d13804f91ec2cd7cae769103fb2cbb1
+index 0000000000000000000000000000000000000000..da151ee16bdd1e5e7bb020d4a2ae76809be2e428
 --- /dev/null
 +++ b/src/main/java/eu/pb4/polymer/core/impl/PolymerImpl.java
-@@ -0,0 +1,9 @@
+@@ -0,0 +1,10 @@
 +package eu.pb4.polymer.core.impl;
 +
 +import org.slf4j.Logger;
@@ -1842,6 +2118,7 @@ index 0000000000000000000000000000000000000000..6af6c9fa8d13804f91ec2cd7cae76910
 +public class PolymerImpl {
 +    public static final Logger LOGGER = LoggerFactory.getLogger("Polymer");
 +    public static final boolean LOG_MORE_ERRORS = false;
++    public static final boolean ITEMSTACK_NBT_HACK = true;
 +}
 diff --git a/src/main/java/eu/pb4/polymer/core/impl/PolymerImplUtils.java b/src/main/java/eu/pb4/polymer/core/impl/PolymerImplUtils.java
 new file mode 100644
@@ -1931,6 +2208,77 @@ index 0000000000000000000000000000000000000000..dbbb681f0081ef2b25bb05e7e2297fb6
 +    public static PolymerTooltipContext of(TooltipFlag context) {
 +        return new PolymerTooltipContext(context.isAdvanced(), context.isCreative());
 +    }
++}
+diff --git a/src/main/java/eu/pb4/polymer/core/mixin/PolymerMixin.java b/src/main/java/eu/pb4/polymer/core/mixin/PolymerMixin.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..2c1451a918f01e4b356d3ecb082349e9bf37dbe5
+--- /dev/null
++++ b/src/main/java/eu/pb4/polymer/core/mixin/PolymerMixin.java
+@@ -0,0 +1,65 @@
++package eu.pb4.polymer.core.mixin;
++
++import eu.pb4.polymer.common.api.PolymerCommonUtils;
++import eu.pb4.polymer.core.api.utils.PolymerSyncedObject;
++import eu.pb4.polymer.core.api.utils.PolymerUtils;
++import net.minecraft.core.Holder;
++import net.minecraft.core.IdMap;
++import net.minecraft.core.Registry;
++import net.minecraft.core.registries.BuiltInRegistries;
++import net.minecraft.resources.ResourceKey;
++
++public class PolymerMixin {
++
++
++    public static <T> T modifyValue(T val, IdMap<T> registry) {
++        var player = PolymerUtils.getPlayerContext();
++
++        if (player != null) {
++            if (val instanceof PolymerSyncedObject<?> polymerSyncedObject) {
++                var obj = polymerSyncedObject.getPolymerReplacement(player);
++
++                if (obj != null) {
++                    return (T) obj;
++                }
++            }
++
++            // if (registry == Block.STATE_IDS) {
++            //     return PolymerBlockUtils.getPolymerBlockState((BlockState) val, player);
++            // }
++        }
++        return val;
++    }
++
++    public static <T> Holder<T> modifyValue2(Holder<T> registryEntry, IdMap<Holder<T>> registryEntries) {
++        // if (registryEntry.value() instanceof PolymerSoundEvent syncedObject) {
++        //     var replacement = syncedObject.getPolymerReplacement(PolymerUtils.getPlayerContext());
++        //
++        //     if (replacement instanceof PolymerSoundEvent) {
++        //         return RegistryEntry.of(replacement);
++        //     }
++        //
++        //
++        //     return Registries.SOUND_EVENT.getEntry(replacement);
++        // }
++
++        return registryEntry;
++    }
++
++
++    public static <E> Holder<E> modifyValue3(Holder<E> entry, ResourceKey<? extends Registry<E>> registryKey) {
++        if (PolymerCommonUtils.isServerNetworkingThread()) {
++            var player = PolymerUtils.getPlayerContext();
++            try {
++                if (entry.value() instanceof PolymerSyncedObject polymerSyncedObject) {
++                    final var registry = BuiltInRegistries.REGISTRY.get((ResourceKey) registryKey);
++                    return registry.wrapAsHolder(polymerSyncedObject.getPolymerReplacement(player));
++                }
++            } catch (Throwable e) {
++                e.printStackTrace();
++            }
++        }
++        return entry;
++    }
++
 +}
 diff --git a/src/main/java/eu/pb4/polymer/resourcepack/api/PolymerArmorModel.java b/src/main/java/eu/pb4/polymer/resourcepack/api/PolymerArmorModel.java
 new file mode 100644
@@ -4047,6 +4395,209 @@ index 0000000000000000000000000000000000000000..155896eece8859cde8c377e3f711f9d6
 +    private MiningLevels() {
 +    }
 +}
+diff --git a/src/main/java/net/minecraft/commands/Commands.java b/src/main/java/net/minecraft/commands/Commands.java
+index 55f3f5396dac2b0bb0cc37b537547e9245042100..79ec5592fedc023fbae2604545e8f3661b07e9ee 100644
+--- a/src/main/java/net/minecraft/commands/Commands.java
++++ b/src/main/java/net/minecraft/commands/Commands.java
+@@ -589,7 +589,16 @@ public class Commands {
+     }
+ 
+     public static <T> RequiredArgumentBuilder<CommandSourceStack, T> argument(String name, ArgumentType<T> type) {
+-        return RequiredArgumentBuilder.argument(name, type);
++        // Organica start
++        RequiredArgumentBuilder<CommandSourceStack, T> argument = RequiredArgumentBuilder.argument(name, type);
++        if (type instanceof net.minecraft.commands.arguments.item.ItemArgument
++            || type instanceof net.minecraft.commands.arguments.blocks.BlockStateArgument
++            || type instanceof net.minecraft.commands.arguments.ResourceArgument<?>
++        ) {
++            argument.suggests(type::listSuggestions);
++        }
++        return argument;
++        // Organica end
+     }
+ 
+     public static Predicate<String> createValidator(Commands.ParseFunction parser) {
+diff --git a/src/main/java/net/minecraft/network/Connection.java b/src/main/java/net/minecraft/network/Connection.java
+index 2ae08b21c63490bbf8cd870f9585d82ed131f815..1135ff75a3bbff378dcd0693a69f204b67671bd0 100644
+--- a/src/main/java/net/minecraft/network/Connection.java
++++ b/src/main/java/net/minecraft/network/Connection.java
+@@ -711,6 +711,14 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+ 
+     public void configurePacketHandler(ChannelPipeline pipeline) {
+         pipeline.addLast(new ChannelHandler[]{new FlowControlHandler()}).addLast("packet_handler", this);
++        PacketEncoder encoder = (PacketEncoder) pipeline.get("encoder");
++        if (encoder != null) {
++            encoder.setConnection(this);
++        }
++        PacketDecoder decoder = (PacketDecoder) pipeline.get("decoder");
++        if (decoder != null) {
++            decoder.setConnection(this);
++        }
+     }
+ 
+     private static void configureInMemoryPacketValidation(ChannelPipeline pipeline, PacketFlow side) {
+diff --git a/src/main/java/net/minecraft/network/FriendlyByteBuf.java b/src/main/java/net/minecraft/network/FriendlyByteBuf.java
+index a5bcad412fb1ac3b6a3eee3f4618dc6c1ca66936..d68195c1238637f024450ec07ecde5972d5ec8da 100644
+--- a/src/main/java/net/minecraft/network/FriendlyByteBuf.java
++++ b/src/main/java/net/minecraft/network/FriendlyByteBuf.java
+@@ -12,6 +12,8 @@ import com.mojang.serialization.Codec;
+ import com.mojang.serialization.DataResult;
+ import com.mojang.serialization.DynamicOps;
+ import com.mojang.serialization.JsonOps;
++import eu.pb4.polymer.core.api.utils.PolymerUtils;
++import eu.pb4.polymer.core.mixin.PolymerMixin;
+ import io.netty.buffer.ByteBuf;
+ import io.netty.buffer.ByteBufAllocator;
+ import io.netty.buffer.ByteBufInputStream;
+@@ -149,6 +151,7 @@ public class FriendlyByteBuf extends ByteBuf {
+     }
+ 
+     public <T> void writeId(IdMap<T> registry, T value) {
++        value = PolymerMixin.modifyValue(value, registry);
+         int i = registry.getId(value);
+ 
+         if (i == -1) {
+@@ -159,6 +162,7 @@ public class FriendlyByteBuf extends ByteBuf {
+     }
+ 
+     public <T> void writeId(IdMap<Holder<T>> registryEntries, Holder<T> entry, FriendlyByteBuf.Writer<T> writer) {
++        entry = PolymerMixin.modifyValue2(entry, registryEntries);
+         switch (entry.kind()) {
+             case REFERENCE:
+                 int i = registryEntries.getId(entry);
+diff --git a/src/main/java/net/minecraft/network/PacketDecoder.java b/src/main/java/net/minecraft/network/PacketDecoder.java
+index f2627bc7688c5c3d412020f410d365adb792a36e..8dc515102a4db64f6df84628721e7ef72f7d7b8e 100644
+--- a/src/main/java/net/minecraft/network/PacketDecoder.java
++++ b/src/main/java/net/minecraft/network/PacketDecoder.java
+@@ -11,10 +11,15 @@ import java.util.List;
+ import net.minecraft.network.protocol.Packet;
+ import net.minecraft.util.profiling.jfr.JvmProfiler;
+ import org.slf4j.Logger;
++import xyz.nucleoid.packettweaker.PacketContext;
+ 
+ public class PacketDecoder extends ByteToMessageDecoder implements ProtocolSwapHandler {
+     private static final Logger LOGGER = LogUtils.getLogger();
+     private final AttributeKey<ConnectionProtocol.CodecData<?>> codecKey;
++    private Connection connection;
++    public void setConnection(Connection connection) {
++        this.connection = connection;
++    }
+ 
+     public PacketDecoder(AttributeKey<ConnectionProtocol.CodecData<?>> protocolKey) {
+         this.codecKey = protocolKey;
+@@ -27,7 +32,11 @@ public class PacketDecoder extends ByteToMessageDecoder implements ProtocolSwapH
+             ConnectionProtocol.CodecData<?> codecData = attribute.get();
+             FriendlyByteBuf friendlyByteBuf = new FriendlyByteBuf(byteBuf);
+             int j = friendlyByteBuf.readVarInt();
++            if (this.connection != null) {
++                PacketContext.setContext(this.connection, null);
++            }
+             Packet<?> packet = codecData.createPacket(j, friendlyByteBuf);
++            PacketContext.clearContext();
+             if (packet == null) {
+                 throw new IOException("Bad packet id " + j);
+             } else {
+diff --git a/src/main/java/net/minecraft/network/PacketEncoder.java b/src/main/java/net/minecraft/network/PacketEncoder.java
+index d364bd57b1675c8b21d781c2bc16c3e65800455c..c9d578cbca52c8158f3a6a9dda15e43a4f07c8ce 100644
+--- a/src/main/java/net/minecraft/network/PacketEncoder.java
++++ b/src/main/java/net/minecraft/network/PacketEncoder.java
+@@ -10,10 +10,15 @@ import java.io.IOException;
+ import net.minecraft.network.protocol.Packet;
+ import net.minecraft.util.profiling.jfr.JvmProfiler;
+ import org.slf4j.Logger;
++import xyz.nucleoid.packettweaker.PacketContext;
+ 
+ public class PacketEncoder extends MessageToByteEncoder<Packet<?>> {
+     private static final Logger LOGGER = LogUtils.getLogger();
+     private final AttributeKey<ConnectionProtocol.CodecData<?>> codecKey;
++    private Connection connection;
++    public void setConnection(Connection connection) {
++        this.connection = connection;
++    }
+ 
+     public PacketEncoder(AttributeKey<ConnectionProtocol.CodecData<?>> protocolKey) {
+         this.codecKey = protocolKey;
+@@ -39,7 +44,11 @@ public class PacketEncoder extends MessageToByteEncoder<Packet<?>> {
+ 
+                 try {
+                     int j = friendlyByteBuf.writerIndex();
++                    if (this.connection != null) {
++                        PacketContext.setContext(this.connection, packet);
++                    }
+                     packet.write(friendlyByteBuf);
++                    PacketContext.clearContext();
+                     int k = friendlyByteBuf.writerIndex() - j;
+                     if (false && k > 8388608) { // Paper - disable
+                         throw new IllegalArgumentException("Packet too big (is " + k + ", should be less than 8388608): " + packet);
+diff --git a/src/main/java/net/minecraft/network/PacketListener.java b/src/main/java/net/minecraft/network/PacketListener.java
+index ac6f4c5a5777c7ca04d7260d6eb5e62a9de08d10..49331c5b4b50e6ed2f9fe48d67665f922bcd519d 100644
+--- a/src/main/java/net/minecraft/network/PacketListener.java
++++ b/src/main/java/net/minecraft/network/PacketListener.java
+@@ -1,10 +1,14 @@
+ package net.minecraft.network;
+ 
++import com.mojang.authlib.GameProfile;
+ import net.minecraft.CrashReport;
+ import net.minecraft.CrashReportCategory;
+ import net.minecraft.network.chat.Component;
+ import net.minecraft.network.protocol.Packet;
+ import net.minecraft.network.protocol.PacketFlow;
++import net.minecraft.server.level.ClientInformation;
++import net.minecraft.server.level.ServerPlayer;
++import org.jetbrains.annotations.Nullable;
+ 
+ public interface PacketListener {
+     PacketFlow flow();
+@@ -36,4 +40,18 @@ public interface PacketListener {
+ 
+     default void fillListenerSpecificCrashDetails(CrashReportCategory section) {
+     }
++    @Nullable
++    default ServerPlayer getPlayerForPacketTweaker() {
++        return null;
++    }
++
++    @Nullable
++    default ClientInformation getClientOptionsForPacketTweaker() {
++        return null;
++    }
++
++    @Nullable
++    default GameProfile getGameProfileForPacketTweaker() {
++        return null;
++    }
+ }
+diff --git a/src/main/java/net/minecraft/resources/RegistryFixedCodec.java b/src/main/java/net/minecraft/resources/RegistryFixedCodec.java
+index bd8f9664084beb1ae6a31d9ee62795d72bed1b95..ee688b56a6dc607b9b90dab274c89c8e3c4625f8 100644
+--- a/src/main/java/net/minecraft/resources/RegistryFixedCodec.java
++++ b/src/main/java/net/minecraft/resources/RegistryFixedCodec.java
+@@ -6,6 +6,7 @@ import com.mojang.serialization.DataResult;
+ import com.mojang.serialization.DynamicOps;
+ import com.mojang.serialization.Lifecycle;
+ import java.util.Optional;
++import eu.pb4.polymer.core.mixin.PolymerMixin;
+ import net.minecraft.core.Holder;
+ import net.minecraft.core.HolderGetter;
+ import net.minecraft.core.HolderOwner;
+@@ -22,7 +23,8 @@ public final class RegistryFixedCodec<E> implements Codec<Holder<E>> {
+         this.registryKey = registry;
+     }
+ 
+-    public <T> DataResult<T> encode(Holder<E> holder, DynamicOps<T> dynamicOps, T object) {
++    public <T> DataResult<T> encode(Holder<E> holder1, DynamicOps<T> dynamicOps, T object) {
++        final var holder = PolymerMixin.modifyValue3(holder1, registryKey);
+         if (dynamicOps instanceof RegistryOps<?> registryOps) {
+             Optional<HolderOwner<E>> optional = registryOps.owner(this.registryKey);
+             if (optional.isPresent()) {
+@@ -58,7 +60,7 @@ public final class RegistryFixedCodec<E> implements Codec<Holder<E>> {
+                             return "Failed to get element " + resourceLocation;
+                         });
+                     }).map((reference) -> {
+-                        return Pair.of(reference, (T)pair.getSecond());
++                        return Pair.of((Holder<E>) reference, (T)pair.getSecond());
+                     }).setLifecycle(Lifecycle.stable());
+                 });
+             }
 diff --git a/src/main/java/net/minecraft/server/level/ServerPlayer.java b/src/main/java/net/minecraft/server/level/ServerPlayer.java
 index be05a52be037042c6158100e2ce880b8ed415d53..b5fd177c3325be0b963e29f0e45dd4e10c113257 100644
 --- a/src/main/java/net/minecraft/server/level/ServerPlayer.java
@@ -4068,6 +4619,67 @@ index be05a52be037042c6158100e2ce880b8ed415d53..b5fd177c3325be0b963e29f0e45dd4e1
      }
  
      @Override
+diff --git a/src/main/java/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java b/src/main/java/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java
+index cae10b963d153fb1777b18054796a45b2809342b..5c68ca628b7f9c16a302d397fa49b313abba8b68 100644
+--- a/src/main/java/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java
++++ b/src/main/java/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java
+@@ -171,4 +171,13 @@ public class ServerConfigurationPacketListenerImpl extends ServerCommonPacketLis
+             this.startNextTask();
+         }
+     }
++    @Override
++    public GameProfile getGameProfileForPacketTweaker() {
++        return this.playerProfile();
++    }
++
++    @Override
++    public ClientInformation getClientOptionsForPacketTweaker() {
++        return this.clientInformation;
++    }
+ }
+diff --git a/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+index 8b630fc4da8a7fda08c416e70c22463f04c3b6b5..38d0e0dc2c179b66663aed460b62a47ff6d0628c 100644
+--- a/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java
++++ b/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+@@ -128,6 +128,7 @@ import net.minecraft.network.protocol.status.ServerboundPingRequestPacket;
+ import net.minecraft.resources.ResourceKey;
+ import net.minecraft.resources.ResourceLocation;
+ import net.minecraft.server.MinecraftServer;
++import net.minecraft.server.level.ClientInformation;
+ import net.minecraft.server.level.ServerLevel;
+ import net.minecraft.server.level.ServerPlayer;
+ import net.minecraft.stats.ServerRecipeBook;
+@@ -3427,6 +3428,7 @@ public class ServerGamePacketListenerImpl extends ServerCommonPacketListenerImpl
+         // Paper end - do not accept invalid information
+         this.player.updateOptions(packet.information());
+         this.connection.channel.attr(io.papermc.paper.adventure.PaperAdventure.LOCALE_ATTRIBUTE).set(net.kyori.adventure.translation.Translator.parseLocale(packet.information().language())); // Paper
++        this.clientSettings = null;
+     }
+ 
+     @Override
+@@ -3509,4 +3511,22 @@ public class ServerGamePacketListenerImpl extends ServerCommonPacketListenerImpl
+ 
+         InteractionResult run(ServerPlayer player, Entity entity, InteractionHand hand);
+     }
++    @Override
++    public @org.jetbrains.annotations.Nullable ServerPlayer getPlayerForPacketTweaker() {
++        return this.player;
++    }
++
++    @Override
++    public GameProfile getGameProfileForPacketTweaker() {
++        return this.playerProfile();
++    }
++
++    private ClientInformation clientSettings;
++    @Override
++    public ClientInformation getClientOptionsForPacketTweaker() {
++        if (this.clientSettings == null) {
++            this.clientSettings = this.player.clientInformation();
++        }
++        return this.clientSettings;
++    }
+ }
 diff --git a/src/main/java/net/minecraft/world/damagesource/CombatTracker.java b/src/main/java/net/minecraft/world/damagesource/CombatTracker.java
 index 9c99b2e365aacb8309f29acb9025faccd2c676b3..177529e5b7d730debb30677d403693c0dde98e2c 100644
 --- a/src/main/java/net/minecraft/world/damagesource/CombatTracker.java
@@ -4664,18 +5276,20 @@ index c072e3e9742f733aad0d13833fb700c42ca1c356..9613c642dea17ac6dd0fce3aaa6cf5e0
      }
  }
 diff --git a/src/main/java/net/minecraft/world/item/ItemStack.java b/src/main/java/net/minecraft/world/item/ItemStack.java
-index b0cc92797408c38dcd47fdc7ef0ea128d82cd091..69b03d35ff13d03d70adea799f340e6968d6ded2 100644
+index b0cc92797408c38dcd47fdc7ef0ea128d82cd091..28d096517804749793d09a74269e4ce1de48728b 100644
 --- a/src/main/java/net/minecraft/world/item/ItemStack.java
 +++ b/src/main/java/net/minecraft/world/item/ItemStack.java
-@@ -114,6 +114,7 @@ import org.bukkit.entity.Player;
- import org.bukkit.event.block.BlockFertilizeEvent;
- import org.bukkit.event.player.PlayerItemDamageEvent;
- import org.bukkit.event.world.StructureGrowEvent;
-+import organica.paper.api.item.ItemStackEvents;
- // CraftBukkit end
- 
- public final class ItemStack {
-@@ -166,7 +167,7 @@ public final class ItemStack {
+@@ -23,6 +23,9 @@ import java.util.function.Predicate;
+ import java.util.stream.Collectors;
+ import java.util.stream.Stream;
+ import javax.annotation.Nullable;
++import eu.pb4.polymer.core.api.item.PolymerItemUtils;
++import eu.pb4.polymer.core.api.utils.PolymerUtils;
++import eu.pb4.polymer.core.impl.PolymerImpl;
+ import net.minecraft.ChatFormatting;
+ import net.minecraft.Util;
+ import net.minecraft.advancements.CriteriaTriggers;
+@@ -166,7 +169,7 @@ public final class ItemStack {
      public static final String TAG_LORE = "Lore";
      public static final String TAG_DAMAGE = "Damage";
      public static final String TAG_COLOR = "color";
@@ -4684,32 +5298,46 @@ index b0cc92797408c38dcd47fdc7ef0ea128d82cd091..69b03d35ff13d03d70adea799f340e69
      private static final String TAG_REPAIR_COST = "RepairCost";
      private static final String TAG_CAN_DESTROY_BLOCK_LIST = "CanDestroy";
      private static final String TAG_CAN_PLACE_ON_BLOCK_LIST = "CanPlaceOn";
-@@ -1019,6 +1020,9 @@ public final class ItemStack {
+@@ -599,7 +602,12 @@ public final class ItemStack {
+         if (this.tag != null) {
+             nbt.put("tag", this.tag.copy());
+         }
+-
++        if (PolymerImpl.ITEMSTACK_NBT_HACK) {
++            var self = (ItemStack) (Object) this;
++            // if (PolymerItemUtils.isPolymerServerItem(self)) {
++            //     ((TypeAwareNbtCompound) nbt).polymerCore$setType(TypeAwareNbtCompound.STACK_TYPE);
++            // }
++        }
+         return nbt;
+     }
+ 
+@@ -1019,6 +1027,9 @@ public final class ItemStack {
          if (ItemStack.shouldShowInTooltip(i, ItemStack.TooltipPart.ADDITIONAL)) {
              this.getItem().appendHoverText(this, player == null ? null : player.level(), list, context);
          }
 +        // Organica start - tooltip
-+        ItemStackEvents.GET_TOOLTIP_AFTER_ADDITIONAL.invoker().getTooltipLines(this, player, list, context);
++        organica.paper.api.item.ItemStackEvents.GET_TOOLTIP_AFTER_ADDITIONAL.invoker().getTooltipLines(this, player, list, context);
 +        // Organica end
  
          int j;
  
-@@ -1120,6 +1124,9 @@ public final class ItemStack {
+@@ -1120,6 +1131,9 @@ public final class ItemStack {
              }
          }
  
 +        // Organica start - tooltip
-+        ItemStackEvents.GET_TOOLTIP_AFTER_MODIFIERS.invoker().getTooltipLines(this, player, list, context);
++        organica.paper.api.item.ItemStackEvents.GET_TOOLTIP_AFTER_MODIFIERS.invoker().getTooltipLines(this, player, list, context);
 +        // Organica end
          if (this.hasTag()) {
              if (ItemStack.shouldShowInTooltip(i, ItemStack.TooltipPart.UNBREAKABLE) && this.tag.getBoolean("Unbreakable")) {
                  list.add(Component.translatable("item.unbreakable").withStyle(ChatFormatting.BLUE));
-@@ -1152,6 +1159,9 @@ public final class ItemStack {
+@@ -1152,6 +1166,9 @@ public final class ItemStack {
              }
          }
  
 +        // Organica start - tooltip
-+        ItemStackEvents.GET_TOOLTIP_AFTER_CAN_PLACE_ON.invoker().getTooltipLines(this, player, list, context);
++        organica.paper.api.item.ItemStackEvents.GET_TOOLTIP_AFTER_CAN_PLACE_ON.invoker().getTooltipLines(this, player, list, context);
 +        // Organica end
          if (context.isAdvanced()) {
              if (this.isDamaged()) {
@@ -9475,5 +10103,115 @@ index 0000000000000000000000000000000000000000..93f402eb6c9836f2aff29a6e3aa74dd2
 +    @Override
 +    public @NotNull Collection<Component> tooltip() {
 +        return List.of();
++    }
++}
+diff --git a/src/main/java/xyz/nucleoid/packettweaker/PacketContext.java b/src/main/java/xyz/nucleoid/packettweaker/PacketContext.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..c0c999becc98a9d79b6ffe4271a876c721166a5d
+--- /dev/null
++++ b/src/main/java/xyz/nucleoid/packettweaker/PacketContext.java
+@@ -0,0 +1,104 @@
++package xyz.nucleoid.packettweaker;
++
++import com.mojang.authlib.GameProfile;
++import net.minecraft.network.Connection;
++import net.minecraft.network.ConnectionProtocol;
++import net.minecraft.network.PacketListener;
++import net.minecraft.network.chat.Component;
++import net.minecraft.network.protocol.Packet;
++import net.minecraft.network.protocol.PacketFlow;
++import net.minecraft.server.level.ClientInformation;
++import org.jetbrains.annotations.ApiStatus;
++import org.jetbrains.annotations.Nullable;
++import net.minecraft.server.level.ServerPlayer;
++
++public final class PacketContext {
++    private static final ThreadLocal<PacketContext> INSTANCE = ThreadLocal.withInitial(PacketContext::new);
++    private static final PacketListener EMPTY = new PacketListener() {
++        @Override public PacketFlow flow() {return null;}
++        @Override public ConnectionProtocol protocol() {return null;}
++        @Override public void onDisconnect(final Component reason) {}
++        @Override public boolean isAcceptingMessages() {return false;}
++    };
++
++    private PacketListener target = EMPTY;
++    @Nullable
++    private Packet<?> encodedPacket = null;
++    @Nullable
++    private Connection connection = null;
++
++    public static PacketContext get() {
++        return INSTANCE.get();
++    }
++
++    public static void runWithContext(@Nullable PacketListener networkHandler, @Nullable Packet<?> packet, Runnable runnable) {
++        if (networkHandler == null) {
++            runnable.run();
++            return;
++        }
++
++        PacketContext context = PacketContext.get();
++        var oldTarget = context.target;
++        var oldPacket = context.encodedPacket;
++        context.target = (PacketListener) networkHandler;
++        context.encodedPacket = packet;
++        runnable.run();
++        context.target = oldTarget;
++        context.encodedPacket = oldPacket;
++    }
++    public static void runWithContext(@Nullable PacketListener networkHandler, Runnable runnable) {
++        runWithContext(networkHandler, null, runnable);
++    }
++
++    @ApiStatus.Internal
++    public static void setContext(@Nullable Connection connection, @Nullable Packet<?> packet) {
++        if (connection == null) {
++            clearContext();
++            return;
++        }
++
++        PacketContext context = PacketContext.get();
++        context.target = connection.getPacketListener();
++        context.connection = connection;
++        context.encodedPacket = packet;
++    }
++    public static void clearContext() {
++        PacketContext context = PacketContext.get();
++        context.target = EMPTY;
++        context.encodedPacket = null;
++    }
++
++    @Nullable
++    @Deprecated
++    public ServerPlayer getTarget() {
++        return this.getPlayer();
++    }
++
++    @Nullable
++    public ServerPlayer getPlayer() {
++        return this.target.getPlayerForPacketTweaker();
++    }
++    @Nullable
++    public ClientInformation getClientOptions() {
++        return this.target.getClientOptionsForPacketTweaker();
++    }
++    @Nullable
++    public GameProfile getGameProfile() {
++        return this.target.getGameProfileForPacketTweaker();
++    }
++
++
++    public PacketListener getPacketListener() {
++        return this.target;
++    }
++
++    @Nullable
++    public Connection getClientConnection() {
++        return this.connection;
++    }
++
++    @Nullable
++    public Packet<?> getEncodedPacket() {
++        return this.encodedPacket;
 +    }
 +}
